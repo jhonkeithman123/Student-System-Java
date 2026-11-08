@@ -2,7 +2,10 @@ import javax.swing.*;
 import java.awt.*;
 
 public class DashboardFrame extends JFrame {
-    public DashboardFrame() {
+    private final String studentId;
+    public DashboardFrame() { this(""); }
+    public DashboardFrame(String studentId) {
+        this.studentId = studentId == null ? "" : studentId;
         setTitle("Dashboard");
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         setSize(500, 700);
@@ -27,31 +30,29 @@ public class DashboardFrame extends JFrame {
         sub.setForeground(Theme.MUTED);
         sub.setAlignmentX(Component.CENTER_ALIGNMENT);
         card.add(sub);
-        card.add(Box.createVerticalStrut(40));
+        card.add(Box.createVerticalStrut(20));
 
-        JButton si = Theme.button("Student Information");
-        si.setAlignmentX(Component.CENTER_ALIGNMENT);
-        si.addActionListener(e -> new StudentInformationForm().setVisible(true));
-        card.add(si);
-        card.add(Box.createVerticalStrut(16));
-
-        JButton edit = Theme.button("Edit Student Information");
-        edit.setAlignmentX(Component.CENTER_ALIGNMENT);
-        edit.addActionListener(e -> new StudentInformationForm(true).setVisible(true));
-        card.add(edit);
-        card.add(Box.createVerticalStrut(16));
-
+        JPanel grid = new JPanel(new GridLayout(3, 3, 10, 10));
+        grid.setOpaque(false);
+        JButton si = Theme.button("Student Info");
+        si.addActionListener(e -> { dispose(); new StudentInformationForm(false, studentId).setVisible(true); });
+        JButton edit = Theme.button("Edit Info");
+        edit.addActionListener(e -> { dispose(); new StudentInformationForm(true, studentId).setVisible(true); });
+        JButton enroll = Theme.button("Enrollment");
+        enroll.addActionListener(e -> { dispose(); new EnrollmentForm(studentId).setVisible(true); });
+        JButton sched = Theme.button("Schedules");
+        sched.addActionListener(e -> { dispose(); new SchedulesForm(studentId).setVisible(true); });
+        JButton grades = Theme.button("Grades");
+        grades.addActionListener(e -> { dispose(); new GradesForm(studentId).setVisible(true); });
         JButton reset = Theme.button("Reset Password");
-        reset.setAlignmentX(Component.CENTER_ALIGNMENT);
-        reset.addActionListener(e -> new ResetPasswordForm().setVisible(true));
-        card.add(reset);
-        card.add(Box.createVerticalStrut(16));
+        reset.addActionListener(e -> { dispose(); new ResetPasswordForm().setVisible(true); });
         JButton logout = Theme.button("Logout");
-        logout.setAlignmentX(Component.CENTER_ALIGNMENT);
-        logout.addActionListener(e -> { dispose(); new LoginForm().setVisible(true); });
-        card.add(logout);
+        logout.addActionListener(e -> { if (ThemedDialog.confirm("Logout", "Are you sure?")) { dispose(); new LoginForm().setVisible(true); } });
+        grid.add(si); grid.add(edit); grid.add(enroll);
+        grid.add(sched); grid.add(grades); grid.add(reset);
+        grid.add(logout);
+        card.add(grid);
     }
-
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> new DashboardFrame().setVisible(true));
     }

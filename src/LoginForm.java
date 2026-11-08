@@ -1,3 +1,4 @@
+
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
@@ -116,8 +117,11 @@ class MatrixBackgroundPanel extends JPanel {
 final class PasswordFieldWithEye extends JPanel {
 
     private final JPasswordField field = new JPasswordField();
-    public char[] getPassword() { return field.getPassword(); }
-    private final JToggleButton eyeBtn = new JToggleButton("\\uD83D\\uDC41");
+
+    public char[] getPassword() {
+        return field.getPassword();
+    }
+    private final JToggleButton eyeBtn = new JToggleButton("\uD83D\uDC41");
 
     PasswordFieldWithEye() {
         setLayout(null);
@@ -166,7 +170,9 @@ final class PasswordFieldWithEye extends JPanel {
             t.addActionListener(ev -> {
                 if (step[0] < sizes.length) {
                     eyeBtn.setFont(new Font("Segoe UI Emoji", Font.PLAIN, sizes[step[0]]));
-                    if (step[0] == 2) eyeBtn.setText(show ? closedIcon : openIcon);
+                    if (step[0] == 2) {
+                        eyeBtn.setText(show ? closedIcon : openIcon);
+                    }
                     step[0]++;
                 } else {
                     eyeBtn.setFont(new Font("Segoe UI Emoji", Font.PLAIN, 16));
@@ -180,7 +186,9 @@ final class PasswordFieldWithEye extends JPanel {
 
     @Override
     protected void paintComponent(Graphics g) {
-        if (eyeBtn.getWidth() == 0 && getWidth() > 0) doLayout();
+        if (eyeBtn.getWidth() == 0 && getWidth() > 0) {
+            doLayout();
+        }
         super.paintComponent(g);
     }
 
@@ -220,6 +228,10 @@ class LoginPanel extends JPanel {
         sub.setForeground(new Color(0x94, 0xa3, 0xb8));
         sub.setAlignmentX(Component.CENTER_ALIGNMENT);
 
+        JComboBox<String> typeBox = new JComboBox<>(new String[]{"ID Number", "Email"});
+        typeBox.setMaximumSize(new Dimension(Integer.MAX_VALUE, 32));
+        typeBox.setAlignmentX(Component.CENTER_ALIGNMENT);
+
         JTextField user = new JTextField();
         user.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
         user.setAlignmentX(Component.CENTER_ALIGNMENT);
@@ -231,6 +243,27 @@ class LoginPanel extends JPanel {
                 BorderFactory.createLineBorder(new Color(0x33, 0x41, 0x55)),
                 BorderFactory.createEmptyBorder(8, 12, 8, 12)
         ));
+
+        // apply IdFormat filter initially (ID Number selected)
+        javax.swing.text.DocumentFilter idFilter = new javax.swing.text.DocumentFilter() {
+            public void replace(FilterBypass fb, int offset, int length, String text, javax.swing.text.AttributeSet attrs) throws javax.swing.text.BadLocationException {
+                String cur = fb.getDocument().getText(0, fb.getDocument().getLength());
+                String next = cur.substring(0, offset) + (text == null ? "" : text) + cur.substring(offset + length);
+                String formatted = IdFormat.format(next);
+                fb.replace(0, fb.getDocument().getLength(), formatted, attrs);
+            }
+            public void insertString(FilterBypass fb, int offset, String text, javax.swing.text.AttributeSet attrs) throws javax.swing.text.BadLocationException { replace(fb, offset, 0, text, attrs); }
+            public void remove(FilterBypass fb, int offset, int length) throws javax.swing.text.BadLocationException { replace(fb, offset, length, "", null); }
+        };
+        ((javax.swing.text.AbstractDocument) user.getDocument()).setDocumentFilter(idFilter);
+
+        typeBox.addActionListener(e -> {
+            if ("ID Number".equals(typeBox.getSelectedItem())) {
+                ((javax.swing.text.AbstractDocument) user.getDocument()).setDocumentFilter(idFilter);
+            } else {
+                ((javax.swing.text.AbstractDocument) user.getDocument()).setDocumentFilter(null);
+            }
+        });
 
         PasswordFieldWithEye pass = new PasswordFieldWithEye();
 
@@ -258,8 +291,9 @@ class LoginPanel extends JPanel {
         btn.addActionListener(e -> {
             String id = user.getText().trim();
             String pw = new String(pass.getPassword());
-            try (java.sql.Connection c = DB.getConnection();
-                 java.sql.PreparedStatement ps = c.prepareStatement("SELECT role,name,email FROM users WHERE id=? AND password=?")) {
+            boolean byEmail = "Email".equals(typeBox.getSelectedItem());
+            String col = byEmail ? "email" : "id";
+            try (java.sql.Connection c = DB.getConnection(); java.sql.PreparedStatement ps = c.prepareStatement("SELECT role,name,email,id FROM users WHERE " + col + "=? AND password=?")) {
                 ps.setString(1, id);
                 ps.setString(2, pw);
                 java.sql.ResultSet rs = ps.executeQuery();
@@ -267,20 +301,31 @@ class LoginPanel extends JPanel {
                     String role = rs.getString("role");
                     String name = rs.getString("name");
                     String email = rs.getString("email");
+                    String userId = rs.getString("id");
                     Window w = SwingUtilities.getWindowAncestor(this);
-                    if (w != null) w.dispose();
-                    if ("admin".equalsIgnoreCase(role)) new AdminPanel().setVisible(true);
-                    else new StudentInformationForm(false, name, email).setVisible(true);
+                    if (w != null) {
+                        w.dispose();
+                    }
+                    if ("admin".equalsIgnoreCase(role)) {
+                        new AdminPanel().setVisible(true);
+                    } else {
+                        new DashboardFrame(userId).setVisible(true);
+                    }
                 } else {
                     JOptionPane.showMessageDialog(this, "Invalid credentials");
                 }
-            } catch (java.sql.SQLException ex) { ex.printStackTrace(); JOptionPane.showMessageDialog(this, "DB error"); }
+            } catch (java.sql.SQLException ex) {
+                ex.printStackTrace();
+                JOptionPane.showMessageDialog(this, "DB error");
+            }
         });
         add(Box.createVerticalGlue());
         add(title);
         add(Box.createVerticalStrut(6));
         add(sub);
         add(Box.createVerticalStrut(28));
+        add(typeBox);
+        add(Box.createVerticalStrut(8));
         add(userL);
         add(Box.createVerticalStrut(4));
         add(user);
@@ -300,6 +345,8 @@ class SignupPanel extends JPanel {
     SignupPanel() {
         setOpaque(false);
         setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
+        setMinimumSize(new Dimension(320, 480));
+        setPreferredSize(new Dimension(360, 620));
 
         JLabel title = new JLabel("CREATE ACCOUNT");
         title.setFont(new Font("Segoe UI", Font.BOLD, 24));
@@ -311,10 +358,25 @@ class SignupPanel extends JPanel {
         sub.setForeground(new Color(0x94, 0xa3, 0xb8));
         sub.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-        JTextField user = field();
+        JTextField idField = field();
+        // ID format lock
+        ((javax.swing.text.AbstractDocument) idField.getDocument()).setDocumentFilter(new javax.swing.text.DocumentFilter() {
+            public void replace(FilterBypass fb, int offset, int length, String text, javax.swing.text.AttributeSet attrs) throws javax.swing.text.BadLocationException {
+                String cur = fb.getDocument().getText(0, fb.getDocument().getLength());
+                String next = cur.substring(0, offset) + (text == null ? "" : text) + cur.substring(offset + length);
+                String formatted = IdFormat.format(next);
+                fb.replace(0, fb.getDocument().getLength(), formatted, attrs);
+            }
+            public void insertString(FilterBypass fb, int offset, String text, javax.swing.text.AttributeSet attrs) throws javax.swing.text.BadLocationException { replace(fb, offset, 0, text, attrs); }
+            public void remove(FilterBypass fb, int offset, int length) throws javax.swing.text.BadLocationException { replace(fb, offset, length, "", null); }
+        });
+        JTextField lastName = field();
+        JTextField firstName = field();
+        JTextField middleName = field();
+        JTextField nameExt = field();
         JTextField email = field();
         JPasswordField passField = new JPasswordField();
-        passField.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
+        passField.setMaximumSize(new Dimension(400, 40));
         passField.setAlignmentX(Component.CENTER_ALIGNMENT);
         passField.setFont(new Font("Segoe UI", Font.PLAIN, 14));
         passField.setBackground(new Color(0x0f, 0x17, 0x2a));
@@ -326,7 +388,7 @@ class SignupPanel extends JPanel {
         ));
 
         JPasswordField confirmField = new JPasswordField();
-        confirmField.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
+        confirmField.setMaximumSize(new Dimension(400, 40));
         confirmField.setAlignmentX(Component.CENTER_ALIGNMENT);
         confirmField.setFont(new Font("Segoe UI", Font.PLAIN, 14));
         confirmField.setBackground(new Color(0x0f, 0x17, 0x2a));
@@ -359,7 +421,9 @@ class SignupPanel extends JPanel {
 
             @Override
             protected void paintComponent(Graphics g) {
-                if (eyeBtn.getWidth() == 0 && getWidth() > 0) doLayout();
+                if (eyeBtn.getWidth() == 0 && getWidth() > 0) {
+                    doLayout();
+                }
                 super.paintComponent(g);
             }
         };
@@ -389,7 +453,9 @@ class SignupPanel extends JPanel {
                 if (step[0] < 5) {
                     int[] sizes = {16, 12, 8, 12, 16};
                     eyeBtn.setFont(new Font("Segoe UI Emoji", Font.PLAIN, sizes[step[0]]));
-                    if (step[0] == 2) eyeBtn.setText(show ? "\uD83D\uDE48" : "\uD83D\uDC41");
+                    if (step[0] == 2) {
+                        eyeBtn.setText(show ? "\uD83D\uDE48" : "\uD83D\uDC41");
+                    }
                     step[0]++;
                 } else {
                     eyeBtn.setFont(new Font("Segoe UI Emoji", Font.PLAIN, 16));
@@ -409,7 +475,10 @@ class SignupPanel extends JPanel {
         termsLink.setForeground(Theme.CYAN);
         termsLink.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         termsLink.addMouseListener(new java.awt.event.MouseAdapter() {
-            public void mouseClicked(java.awt.event.MouseEvent e) { new TermsForm().setVisible(true); }
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                new TermsForm().setVisible(true);
+            }
         });
         JPanel termsRow = new JPanel(new FlowLayout());
         termsRow.setOpaque(false);
@@ -432,9 +501,20 @@ class SignupPanel extends JPanel {
         add(Box.createVerticalStrut(6));
         add(sub);
         add(Box.createVerticalStrut(24));
+        add(lbl("ID Number"));
+        add(Box.createVerticalStrut(4));
+        add(idField);
+        add(Box.createVerticalStrut(12));
+        JPanel nameRow = new JPanel(new GridLayout(2, 2, 8, 8));
+        nameRow.setOpaque(false);
+        nameRow.setMaximumSize(new Dimension(480, 120));
+        nameRow.add(wrapSignup("Last Name", lastName));
+        nameRow.add(wrapSignup("First Name", firstName));
+        nameRow.add(wrapSignup("Middle Name", middleName));
+        nameRow.add(wrapSignup("Name Ext (opt)", nameExt));
         add(lbl("Full Name"));
         add(Box.createVerticalStrut(4));
-        add(user);
+        add(nameRow);
         add(Box.createVerticalStrut(12));
         add(lbl("Email"));
         add(Box.createVerticalStrut(4));
@@ -451,6 +531,8 @@ class SignupPanel extends JPanel {
         add(termsRow);
         add(Box.createVerticalStrut(20));
         btn.addActionListener(e -> {
+            String id = idField.getText().trim();
+            if (!IdFormat.isValid(id)) { JOptionPane.showMessageDialog(this, "Invalid ID format (XXXX-XXXXX-XX-X)"); return; }
             String pw = new String(passField.getPassword());
             if (!pw.matches("^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[^A-Za-z0-9]).{8,}$")) {
                 JOptionPane.showMessageDialog(this, "Password must be 8+ chars with upper, lower, number, symbol");
@@ -465,39 +547,55 @@ class SignupPanel extends JPanel {
                 return;
             }
             String domain = email.getText().substring(email.getText().lastIndexOf('.') + 1).toLowerCase();
-            java.util.Set<String> tlds = new java.util.HashSet<>(java.util.Arrays.asList("com","org","net","edu","gov","io","co","ph"));
+            java.util.Set<String> tlds = new java.util.HashSet<>(java.util.Arrays.asList("com", "org", "net", "edu", "gov", "io", "co", "ph"));
             if (!tlds.contains(domain)) {
                 JOptionPane.showMessageDialog(this, "Invalid email domain");
                 return;
             }
+            String full = (lastName.getText()+" "+firstName.getText()+" "+middleName.getText()+" "+nameExt.getText()).trim();
             // persist to DB
             try (java.sql.Connection c = DB.getConnection()) {
                 java.sql.PreparedStatement pu = c.prepareStatement("INSERT INTO users(id,password,role,name,email) VALUES(?,?,?,?,?)");
-                pu.setString(1, user.getText().trim());
+                pu.setString(1, id);
                 pu.setString(2, pw);
                 pu.setString(3, "student");
-                pu.setString(4, user.getText().trim());
+                pu.setString(4, full);
                 pu.setString(5, email.getText().trim());
                 pu.executeUpdate();
                 java.sql.PreparedStatement ps = c.prepareStatement("INSERT INTO students(student_id,name,course,year,email,contact) VALUES(?,?,?,?,?,?)");
-                ps.setString(1, user.getText().trim());
-                ps.setString(2, user.getText().trim());
+                ps.setString(1, id);
+                ps.setString(2, full);
                 ps.setString(3, "");
                 ps.setString(4, "1");
                 ps.setString(5, email.getText().trim());
                 ps.setString(6, "");
                 ps.executeUpdate();
-            } catch (java.sql.SQLException ex) { ex.printStackTrace(); }
+            } catch (java.sql.SQLException ex) {
+                ex.printStackTrace();
+            }
             Window w = SwingUtilities.getWindowAncestor(this);
-            if (w != null) w.dispose();
-            new StudentInformationForm(true, user.getText(), email.getText()).setVisible(true);
+            if (w != null) {
+                w.dispose();
+            }
+            new StudentInformationForm(true, full, email.getText().trim()).setVisible(true);
         });
         add(btn);
     }
 
+    private JPanel wrapSignup(String label, JComponent field) {
+        JPanel p = new JPanel(new BorderLayout());
+        p.setOpaque(false);
+        JLabel l = new JLabel(label);
+        l.setForeground(new Color(0xcb, 0xd5, 0xe1));
+        l.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        p.add(l, BorderLayout.NORTH);
+        p.add(field, BorderLayout.CENTER);
+        return p;
+    }
+
     private JTextField field() {
         JTextField f = new JTextField();
-        f.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
+        f.setMaximumSize(new Dimension(400, 40));
         f.setAlignmentX(Component.CENTER_ALIGNMENT);
         f.setFont(new Font("Segoe UI", Font.PLAIN, 14));
         f.setBackground(new Color(0x0f, 0x17, 0x2a));
@@ -519,20 +617,23 @@ class SignupPanel extends JPanel {
     }
 }
 
-/* ---------- Transition host with right-to-left wipe effect ---------- */
+/* ---------- Transition host with animated expand/collapse ---------- */
 class TransitionHost extends JPanel {
 
     private final MatrixBackgroundPanel bg = new MatrixBackgroundPanel();
     private final JPanel centering = new JPanel(new GridBagLayout());
-    private JPanel current;
-    private JPanel pendingNext;
+    private JComponent current;
+    private JComponent pendingNext;
     private JPanel activeCardPanel;
-    private BufferedImage outImg, inImg;
-    private float lineProgress = 0f;
+    private float progress = 0f;
     private boolean animating = false;
+    private boolean swapped = false;
     private final Timer timer;
     private final JToggleButton tabLogin = new JToggleButton("Login", true);
     private final JToggleButton tabSignup = new JToggleButton("Sign Up");
+
+    private Dimension startSize;
+    private Dimension endSize;
 
     TransitionHost() {
         setLayout(new BorderLayout());
@@ -543,7 +644,7 @@ class TransitionHost extends JPanel {
         centering.setOpaque(false);
         centering.setMinimumSize(new Dimension(360, 520));
         bg.setLayout(new GridBagLayout());
-        
+
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.gridx = 0;
         gbc.gridy = 1;
@@ -553,7 +654,6 @@ class TransitionHost extends JPanel {
         gbc.insets = new Insets(-40, 0, 0, 0);
         bg.add(centering, gbc);
 
-        // Permanent card container to prevent layout shifting
         activeCardPanel = new JPanel() {
             @Override
             protected void paintComponent(Graphics g) {
@@ -566,6 +666,7 @@ class TransitionHost extends JPanel {
         };
         activeCardPanel.setOpaque(false);
         activeCardPanel.setLayout(new BorderLayout());
+        activeCardPanel.setMinimumSize(new Dimension(340, 480));
         activeCardPanel.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(new Color(0x33, 0x41, 0x55), 1),
                 BorderFactory.createEmptyBorder(28, 32, 28, 32)
@@ -579,7 +680,7 @@ class TransitionHost extends JPanel {
         tabs.setOpaque(false);
         styleTab(tabLogin);
         styleTab(tabSignup);
-        
+
         tabLogin.addActionListener(e -> {
             if (!tabLogin.isSelected()) return;
             tabSignup.setSelected(false);
@@ -618,91 +719,110 @@ class TransitionHost extends JPanel {
         b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
     }
 
-    private void switchTo(JPanel next) {
-        if (animating || next.getClass().equals(current.getClass())) return;
+    private void switchTo(JComponent next) {
+        if (next instanceof SignupPanel) {
+            JScrollPane sp = new JScrollPane(next);
+            sp.setOpaque(false);
+            sp.getViewport().setOpaque(false);
+            sp.setBorder(null);
+            sp.setMinimumSize(new Dimension(340, 480));
+            sp.setPreferredSize(new Dimension(360, 620));
+            sp.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+            sp.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+            sp.getVerticalScrollBar().setUnitIncrement(20);
+            sp.getHorizontalScrollBar().setUnitIncrement(20);
+            sp.getVerticalScrollBar().setUI(new ThinScrollBarUI());
+            sp.getHorizontalScrollBar().setUI(new ThinScrollBarUI());
+            next = sp;
+        }
+        if (animating || next.getClass().equals(current.getClass())) {
+            return;
+        }
 
-        int cw = activeCardPanel.getWidth();
-        int ch = activeCardPanel.getHeight();
-
-        // 1. Snapshot current (old) panel
-        outImg = snapshot(activeCardPanel, cw, ch);
-
-        // 2. Snapshot target (new) panel by mounting it temporarily
+        startSize = new Dimension(activeCardPanel.getWidth(), activeCardPanel.getHeight());
         activeCardPanel.removeAll();
         activeCardPanel.add(next, BorderLayout.CENTER);
         activeCardPanel.revalidate();
         activeCardPanel.doLayout();
-        
-        Dimension pref = activeCardPanel.getPreferredSize();
-        int targetW = Math.max(cw, pref.width);
-        int targetH = Math.max(ch, pref.height);
-        activeCardPanel.setSize(targetW, targetH);
-
-        inImg = snapshot(activeCardPanel, targetW, targetH);
-
-        // Hide actual swing component so paint() controls all rendering
-        activeCardPanel.setVisible(false);
+        Dimension pref = next.getPreferredSize();
+        if (pref == null || pref.width <= 0 || pref.height <= 0) {
+            pref = next.getMinimumSize();
+        }
+        endSize = new Dimension(Math.max(activeCardPanel.getMinimumSize().width, pref.width),
+                                Math.max(activeCardPanel.getMinimumSize().height, pref.height));
 
         pendingNext = next;
         animating = true;
-        lineProgress = 0f;
+        progress = 0f;
         timer.start();
     }
 
-    private BufferedImage snapshot(JComponent c, int w, int h) {
-        BufferedImage img = new BufferedImage(Math.max(1, w), Math.max(1, h), BufferedImage.TYPE_INT_ARGB);
-        Graphics2D g = img.createGraphics();
-        c.paint(g);
-        g.dispose();
-        return img;
-    }
-
     private void tick() {
-        lineProgress += 0.04f;
-        if (lineProgress >= 1f) {
-            lineProgress = 1f;
+        progress += 0.05f;
+        if (progress >= 1f) {
+            progress = 1f;
             animating = false;
             timer.stop();
-
             if (pendingNext != null) {
                 current = pendingNext;
                 pendingNext = null;
             }
-
-            activeCardPanel.setVisible(true);
-            outImg = null;
-            inImg = null;
+            activeCardPanel.setPreferredSize(null);
+            activeCardPanel.revalidate();
             centering.revalidate();
             centering.repaint();
+            return;
         }
+
+        float t = progress;
+        float eased = (float)(0.5 - 0.5 * Math.cos(Math.PI * t));
+        int w = (int)(startSize.width + (endSize.width - startSize.width) * eased);
+        int h = (int)(startSize.height + (endSize.height - startSize.height) * eased);
+        activeCardPanel.setPreferredSize(new Dimension(w, h));
+        activeCardPanel.revalidate();
+        activeCardPanel.repaint();
+        centering.revalidate();
+        centering.repaint();
         repaint();
     }
 
     @Override
     public void paint(Graphics g) {
         super.paint(g);
-        if (!animating || outImg == null || inImg == null) {
-            return;
-        }
-
+    }
+}
+class ThinScrollBarUI extends javax.swing.plaf.basic.BasicScrollBarUI {
+    @Override
+    protected void configureScrollBarColors() {
+        thumbColor = new Color(0x22, 0xd3, 0xee);
+        trackColor = new Color(0x1e, 0x29, 0x3b);
+    }
+    @Override
+    protected JButton createDecreaseButton(int orientation) { return zeroButton(); }
+    @Override
+    protected JButton createIncreaseButton(int orientation) { return zeroButton(); }
+    private JButton zeroButton() {
+        JButton b = new JButton();
+        b.setPreferredSize(new Dimension(0, 0));
+        b.setMinimumSize(new Dimension(0, 0));
+        b.setMaximumSize(new Dimension(0, 0));
+        return b;
+    }
+    @Override
+    protected void paintThumb(Graphics g, JComponent c, Rectangle thumbBounds) {
+        if (thumbBounds.isEmpty() || !scrollbar.isEnabled()) return;
         Graphics2D g2 = (Graphics2D) g.create();
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-
-        Point cardLoc = SwingUtilities.convertPoint(activeCardPanel.getParent(), activeCardPanel.getLocation(), this);
-        int cx = cardLoc.x, cy = cardLoc.y;
-        int cw = Math.max(outImg.getWidth(), inImg.getWidth());
-        
-        float eased = (float) (0.5 - 0.5 * Math.cos(Math.PI * lineProgress));
-        int ch = Math.max(outImg.getHeight(), inImg.getHeight());
-
-        g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 1f - eased));
-        g2.drawImage(outImg, cx, cy, null);
-        g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, eased));
-        g2.drawImage(inImg, cx, cy, null);
-        g2.setComposite(AlphaComposite.SrcOver);
-
+        g2.setColor(thumbColor);
+        int arc = 10;
+        g2.fillRoundRect(thumbBounds.x + 2, thumbBounds.y + 2, thumbBounds.width - 4, thumbBounds.height - 4, arc, arc);
+        g2.dispose();
+    }
+    @Override
+    protected void paintTrack(Graphics g, JComponent c, Rectangle trackBounds) {
+        Graphics2D g2 = (Graphics2D) g.create();
+        g2.setColor(trackColor);
+        g2.fillRoundRect(trackBounds.x, trackBounds.y, trackBounds.width, trackBounds.height, 10, 10);
         g2.dispose();
     }
 }
-
