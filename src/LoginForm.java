@@ -25,7 +25,7 @@ public class LoginForm extends JFrame {
         try {
             Class.forName("com.formdev.flatlaf.FlatDarkLaf");
             UIManager.setLookAndFeel(new com.formdev.flatlaf.FlatDarkLaf());
-        } catch (Throwable t) {
+        } catch (ClassNotFoundException | UnsupportedLookAndFeelException t) {
             try {
                 for (UIManager.LookAndFeelInfo info : UIManager.getInstalledLookAndFeels()) {
                     if ("Nimbus".equals(info.getName())) {
@@ -33,7 +33,7 @@ public class LoginForm extends JFrame {
                         break;
                     }
                 }
-            } catch (Exception ex) {
+            } catch (ClassNotFoundException | IllegalAccessException | InstantiationException | UnsupportedLookAndFeelException ex) {
                 /* ignore */ }
         }
         SwingUtilities.invokeLater(() -> new LoginForm().setVisible(true));
@@ -82,6 +82,7 @@ class MatrixBackgroundPanel extends JPanel {
         }
         Graphics2D g2 = (Graphics2D) g.create();
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
         g2.setColor(getBackground());
         g2.fillRect(0, 0, w, h);
 
@@ -112,10 +113,11 @@ class MatrixBackgroundPanel extends JPanel {
 }
 
 /* ---------- Reusable eye password field ---------- */
-class PasswordFieldWithEye extends JPanel {
+final class PasswordFieldWithEye extends JPanel {
 
     private final JPasswordField field = new JPasswordField();
-    private final JToggleButton eyeBtn = new JToggleButton("\uD83D\uDC41");
+    public char[] getPassword() { return field.getPassword(); }
+    private final JToggleButton eyeBtn = new JToggleButton("\\uD83D\\uDC41");
 
     PasswordFieldWithEye() {
         setLayout(null);
@@ -146,6 +148,7 @@ class PasswordFieldWithEye extends JPanel {
         setComponentZOrder(eyeBtn, 0);
 
         addComponentListener(new ComponentAdapter() {
+            @Override
             public void componentResized(ComponentEvent e) {
                 doLayout();
             }
@@ -231,7 +234,7 @@ class LoginPanel extends JPanel {
 
         PasswordFieldWithEye pass = new PasswordFieldWithEye();
 
-        JLabel userL = new JLabel("Username");
+        JLabel userL = new JLabel("ID Number");
         userL.setForeground(new Color(0xcb, 0xd5, 0xe1));
         userL.setFont(new Font("Segoe UI", Font.PLAIN, 12));
         userL.setAlignmentX(Component.CENTER_ALIGNMENT);
@@ -252,6 +255,27 @@ class LoginPanel extends JPanel {
         btn.setBorderPainted(false);
         btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 
+        btn.addActionListener(e -> {
+            String id = user.getText().trim();
+            String pw = new String(pass.getPassword());
+            try (java.sql.Connection c = DB.getConnection();
+                 java.sql.PreparedStatement ps = c.prepareStatement("SELECT role,name,email FROM users WHERE id=? AND password=?")) {
+                ps.setString(1, id);
+                ps.setString(2, pw);
+                java.sql.ResultSet rs = ps.executeQuery();
+                if (rs.next()) {
+                    String role = rs.getString("role");
+                    String name = rs.getString("name");
+                    String email = rs.getString("email");
+                    Window w = SwingUtilities.getWindowAncestor(this);
+                    if (w != null) w.dispose();
+                    if ("admin".equalsIgnoreCase(role)) new AdminPanel().setVisible(true);
+                    else new StudentInformationForm(false, name, email).setVisible(true);
+                } else {
+                    JOptionPane.showMessageDialog(this, "Invalid credentials");
+                }
+            } catch (java.sql.SQLException ex) { ex.printStackTrace(); JOptionPane.showMessageDialog(this, "DB error"); }
+        });
         add(Box.createVerticalGlue());
         add(title);
         add(Box.createVerticalStrut(6));
@@ -348,6 +372,7 @@ class SignupPanel extends JPanel {
         passWrap.add(eyeBtn);
         passWrap.setComponentZOrder(eyeBtn, 0);
         passWrap.addComponentListener(new ComponentAdapter() {
+            @Override
             public void componentResized(ComponentEvent e) {
                 passWrap.doLayout();
             }
@@ -375,11 +400,22 @@ class SignupPanel extends JPanel {
             t.start();
         });
 
-        JCheckBox terms = new JCheckBox("I agree to Terms & Conditions");
+        JCheckBox terms = new JCheckBox("");
         terms.setForeground(new Color(0xcb, 0xd5, 0xe1));
         terms.setFont(new Font("Segoe UI", Font.PLAIN, 12));
         terms.setOpaque(false);
         terms.setAlignmentX(Component.CENTER_ALIGNMENT);
+        JLabel termsLink = new JLabel("I agree to Terms & Conditions");
+        termsLink.setForeground(Theme.CYAN);
+        termsLink.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        termsLink.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseClicked(java.awt.event.MouseEvent e) { new TermsForm().setVisible(true); }
+        });
+        JPanel termsRow = new JPanel(new FlowLayout());
+        termsRow.setOpaque(false);
+        termsRow.add(terms);
+        termsRow.add(termsLink);
+        termsRow.setAlignmentX(Component.CENTER_ALIGNMENT);
 
         JButton btn = new JButton("SIGN UP");
         btn.setMaximumSize(new Dimension(Integer.MAX_VALUE, 44));
@@ -396,7 +432,7 @@ class SignupPanel extends JPanel {
         add(Box.createVerticalStrut(6));
         add(sub);
         add(Box.createVerticalStrut(24));
-        add(lbl("Username"));
+        add(lbl("Full Name"));
         add(Box.createVerticalStrut(4));
         add(user);
         add(Box.createVerticalStrut(12));
@@ -412,8 +448,50 @@ class SignupPanel extends JPanel {
         add(Box.createVerticalStrut(4));
         add(confirmField);
         add(Box.createVerticalStrut(16));
-        add(terms);
+        add(termsRow);
         add(Box.createVerticalStrut(20));
+        btn.addActionListener(e -> {
+            String pw = new String(passField.getPassword());
+            if (!pw.matches("^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[^A-Za-z0-9]).{8,}$")) {
+                JOptionPane.showMessageDialog(this, "Password must be 8+ chars with upper, lower, number, symbol");
+                return;
+            }
+            if (!terms.isSelected()) {
+                JOptionPane.showMessageDialog(this, "You must accept Terms & Conditions");
+                return;
+            }
+            if (!email.getText().matches("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")) {
+                JOptionPane.showMessageDialog(this, "Invalid email");
+                return;
+            }
+            String domain = email.getText().substring(email.getText().lastIndexOf('.') + 1).toLowerCase();
+            java.util.Set<String> tlds = new java.util.HashSet<>(java.util.Arrays.asList("com","org","net","edu","gov","io","co","ph"));
+            if (!tlds.contains(domain)) {
+                JOptionPane.showMessageDialog(this, "Invalid email domain");
+                return;
+            }
+            // persist to DB
+            try (java.sql.Connection c = DB.getConnection()) {
+                java.sql.PreparedStatement pu = c.prepareStatement("INSERT INTO users(id,password,role,name,email) VALUES(?,?,?,?,?)");
+                pu.setString(1, user.getText().trim());
+                pu.setString(2, pw);
+                pu.setString(3, "student");
+                pu.setString(4, user.getText().trim());
+                pu.setString(5, email.getText().trim());
+                pu.executeUpdate();
+                java.sql.PreparedStatement ps = c.prepareStatement("INSERT INTO students(student_id,name,course,year,email,contact) VALUES(?,?,?,?,?,?)");
+                ps.setString(1, user.getText().trim());
+                ps.setString(2, user.getText().trim());
+                ps.setString(3, "");
+                ps.setString(4, "1");
+                ps.setString(5, email.getText().trim());
+                ps.setString(6, "");
+                ps.executeUpdate();
+            } catch (java.sql.SQLException ex) { ex.printStackTrace(); }
+            Window w = SwingUtilities.getWindowAncestor(this);
+            if (w != null) w.dispose();
+            new StudentInformationForm(true, user.getText(), email.getText()).setVisible(true);
+        });
         add(btn);
     }
 
@@ -441,15 +519,16 @@ class SignupPanel extends JPanel {
     }
 }
 
-/* ---------- Transition host with wave/portal effect ---------- */
+/* ---------- Transition host with right-to-left wipe effect ---------- */
 class TransitionHost extends JPanel {
 
     private final MatrixBackgroundPanel bg = new MatrixBackgroundPanel();
     private final JPanel centering = new JPanel(new GridBagLayout());
     private JPanel current;
     private JPanel pendingNext;
+    private JPanel activeCardPanel;
     private BufferedImage outImg, inImg;
-    private float progress = 0f;
+    private float lineProgress = 0f;
     private boolean animating = false;
     private final Timer timer;
     private final JToggleButton tabLogin = new JToggleButton("Login", true);
@@ -464,6 +543,7 @@ class TransitionHost extends JPanel {
         centering.setOpaque(false);
         centering.setMinimumSize(new Dimension(360, 520));
         bg.setLayout(new GridBagLayout());
+        
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.gridx = 0;
         gbc.gridy = 1;
@@ -473,27 +553,44 @@ class TransitionHost extends JPanel {
         gbc.insets = new Insets(-40, 0, 0, 0);
         bg.add(centering, gbc);
 
+        // Permanent card container to prevent layout shifting
+        activeCardPanel = new JPanel() {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setColor(new Color(0x1e, 0x29, 0x3b, 190));
+                g2.fillRect(0, 0, getWidth(), getHeight());
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        activeCardPanel.setOpaque(false);
+        activeCardPanel.setLayout(new BorderLayout());
+        activeCardPanel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(0x33, 0x41, 0x55), 1),
+                BorderFactory.createEmptyBorder(28, 32, 28, 32)
+        ));
+
         current = new LoginPanel();
-        wrapCard(current);
+        activeCardPanel.add(current, BorderLayout.CENTER);
+        centering.add(activeCardPanel, new GridBagConstraints());
 
         JPanel tabs = new JPanel(new FlowLayout(FlowLayout.CENTER, 12, 0));
         tabs.setOpaque(false);
         styleTab(tabLogin);
         styleTab(tabSignup);
+        
         tabLogin.addActionListener(e -> {
-            if (!tabLogin.isSelected()) {
-                return;
-            }
+            if (!tabLogin.isSelected()) return;
             tabSignup.setSelected(false);
             switchTo(new LoginPanel());
         });
         tabSignup.addActionListener(e -> {
-            if (!tabSignup.isSelected()) {
-                return;
-            }
+            if (!tabSignup.isSelected()) return;
             tabLogin.setSelected(false);
             switchTo(new SignupPanel());
         });
+
         ButtonGroup g = new ButtonGroup();
         g.add(tabLogin);
         g.add(tabSignup);
@@ -521,51 +618,39 @@ class TransitionHost extends JPanel {
         b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
     }
 
-    private void wrapCard(JPanel p) {
-        JPanel card = new JPanel() {
-            @Override
-            protected void paintComponent(Graphics g) {
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setColor(new Color(0x1e, 0x29, 0x3b, 190));
-                g2.fillRect(0, 0, getWidth(), getHeight());
-                g2.dispose();
-                super.paintComponent(g);
-            }
-        };
-        card.setOpaque(false);
-        card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
-        card.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(0x33, 0x41, 0x55), 1),
-                BorderFactory.createEmptyBorder(28, 32, 28, 32)
-        ));
-        card.setPreferredSize(new Dimension(360, 520));
-        card.setMinimumSize(new Dimension(360, 520));
-        card.add(p);
-        centering.removeAll();
-        centering.add(card, new GridBagConstraints());
-        centering.putClientProperty("card", card);
-        current = p;
-    }
-
     private void switchTo(JPanel next) {
-        if (animating) return;
-        if (next.getClass().equals(current.getClass())) return;
-        JComponent card = (JComponent) centering.getClientProperty("card");
-        outImg = snapshot(card);
-        wrapCard(next);
-        current = next;
-        centering.revalidate();
-        centering.repaint();
-        SwingUtilities.invokeLater(() -> {
-            inImg = snapshot((JComponent) centering.getClientProperty("card"));
-            animating = true;
-            progress = 0f;
-            timer.start();
-        });
+        if (animating || next.getClass().equals(current.getClass())) return;
+
+        int cw = activeCardPanel.getWidth();
+        int ch = activeCardPanel.getHeight();
+
+        // 1. Snapshot current (old) panel
+        outImg = snapshot(activeCardPanel, cw, ch);
+
+        // 2. Snapshot target (new) panel by mounting it temporarily
+        activeCardPanel.removeAll();
+        activeCardPanel.add(next, BorderLayout.CENTER);
+        activeCardPanel.revalidate();
+        activeCardPanel.doLayout();
+        
+        Dimension pref = activeCardPanel.getPreferredSize();
+        int targetW = Math.max(cw, pref.width);
+        int targetH = Math.max(ch, pref.height);
+        activeCardPanel.setSize(targetW, targetH);
+
+        inImg = snapshot(activeCardPanel, targetW, targetH);
+
+        // Hide actual swing component so paint() controls all rendering
+        activeCardPanel.setVisible(false);
+
+        pendingNext = next;
+        animating = true;
+        lineProgress = 0f;
+        timer.start();
     }
 
-    private BufferedImage snapshot(JComponent c) {
-        BufferedImage img = new BufferedImage(Math.max(1, c.getWidth()), Math.max(1, c.getHeight()), BufferedImage.TYPE_INT_ARGB);
+    private BufferedImage snapshot(JComponent c, int w, int h) {
+        BufferedImage img = new BufferedImage(Math.max(1, w), Math.max(1, h), BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = img.createGraphics();
         c.paint(g);
         g.dispose();
@@ -573,13 +658,22 @@ class TransitionHost extends JPanel {
     }
 
     private void tick() {
-        progress += 0.04f;
-        if (progress >= 1f) {
-            progress = 1f;
+        lineProgress += 0.04f;
+        if (lineProgress >= 1f) {
+            lineProgress = 1f;
             animating = false;
             timer.stop();
+
+            if (pendingNext != null) {
+                current = pendingNext;
+                pendingNext = null;
+            }
+
+            activeCardPanel.setVisible(true);
             outImg = null;
             inImg = null;
+            centering.revalidate();
+            centering.repaint();
         }
         repaint();
     }
@@ -590,27 +684,25 @@ class TransitionHost extends JPanel {
         if (!animating || outImg == null || inImg == null) {
             return;
         }
+
         Graphics2D g2 = (Graphics2D) g.create();
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        JComponent card = (JComponent) centering.getClientProperty("card");
-        int cx = card.getX(), cy = card.getY(), cw = card.getWidth(), ch = card.getHeight();
-        float eased = (float)(0.5 - 0.5 * Math.cos(Math.PI * progress));
-        int waveX = (int)(cw * (1f - eased));
-        Shape oldClip = g2.getClip();
-        g2.setClip(cx, cy, waveX, ch);
+        g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+
+        Point cardLoc = SwingUtilities.convertPoint(activeCardPanel.getParent(), activeCardPanel.getLocation(), this);
+        int cx = cardLoc.x, cy = cardLoc.y;
+        int cw = Math.max(outImg.getWidth(), inImg.getWidth());
+        
+        float eased = (float) (0.5 - 0.5 * Math.cos(Math.PI * lineProgress));
+        int ch = Math.max(outImg.getHeight(), inImg.getHeight());
+
+        g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 1f - eased));
         g2.drawImage(outImg, cx, cy, null);
-        g2.setClip(cx + waveX, cy, cw - waveX, ch);
+        g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, eased));
         g2.drawImage(inImg, cx, cy, null);
-        g2.setClip(oldClip);
-        int wx = cx + waveX;
-        for (int i = 4; i >= 1; i--) {
-            g2.setStroke(new BasicStroke(i * 2f));
-            g2.setColor(new Color(0x22, 0xd3, 0xee, 30 + i * 20));
-            g2.drawLine(wx, cy, wx, cy + ch);
-        }
-        g2.setStroke(new BasicStroke(2f));
-        g2.setColor(new Color(0x22, 0xd3, 0xee, 230));
-        g2.drawLine(wx, cy, wx, cy + ch);
+        g2.setComposite(AlphaComposite.SrcOver);
+
         g2.dispose();
     }
 }
+
