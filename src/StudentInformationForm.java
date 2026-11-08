@@ -5,13 +5,17 @@ import java.awt.*;
 public class StudentInformationForm extends JFrame {
     private final boolean editable;
     private final String studentId;
-    public StudentInformationForm() { this(false, ""); }
-    public StudentInformationForm(boolean editable) { this(editable, ""); }
-    public StudentInformationForm(boolean editable, String studentId) { this(editable, studentId, "", ""); }
-    public StudentInformationForm(boolean editable, String fullName, String email) { this(editable, "", fullName, email); }
-    public StudentInformationForm(boolean editable, String studentId, String fullName, String email) {
+    private final String password;
+    public StudentInformationForm() { this(false, "", "", "", "", ""); }
+    public StudentInformationForm(boolean editable) { this(editable, "", "", "", "", ""); }
+    public StudentInformationForm(boolean editable, String studentId) { this(editable, studentId, "", "", "", ""); }
+    public StudentInformationForm(boolean editable, String fullName, String email) { this(editable, "", fullName, email, "", ""); }
+    public StudentInformationForm(boolean editable, String studentId, String fullName, String email) { this(editable, studentId, fullName, email, "", ""); }
+    public StudentInformationForm(boolean editable, String studentId, String fullName, String email, String contact) { this(editable, studentId, fullName, email, contact, ""); }
+    public StudentInformationForm(boolean editable, String studentId, String fullName, String email, String contactVal, String password) {
         this.editable = editable;
         this.studentId = studentId;
+        this.password = password;
         setTitle(editable ? "Student Information (Edit)" : "Student Information");
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         setSize(700, 700);
@@ -67,6 +71,14 @@ public class StudentInformationForm extends JFrame {
         JTextField emailField = Theme.field();
         emailField.setText(email == null ? "" : email);
         JTextField contact = Theme.field();
+        contact.setText(contactVal == null ? "" : contactVal);
+        // auto-fill name fields from fullName
+        String fn = fullName == null ? "" : fullName.trim();
+        String[] np = fn.isEmpty() ? new String[0] : fn.split("\\s+");
+        if (np.length > 0) lastName.setText(np[0]);
+        if (np.length > 1) firstName.setText(np[1]);
+        if (np.length > 2) middleName.setText(np[2]);
+        if (np.length > 3) nameExt.setText(String.join(" ", java.util.Arrays.copyOfRange(np, 3, np.length)));
         grid.add(wrap("Student ID", id));
         grid.add(wrap("Course", course));
         grid.add(wrap("Year Level", year));
@@ -101,7 +113,13 @@ public class StudentInformationForm extends JFrame {
                 java.sql.ResultSet rs = ps.executeQuery();
                 if (rs.next()) {
                     String nm = rs.getString("name");
-                    if (nm != null) { /* leave name fields as-is or could split */ }
+                    if (nm != null) {
+                        String[] parts = nm.trim().split("\\s+");
+                        if (parts.length > 0) lastName.setText(parts[0]);
+                        if (parts.length > 1) firstName.setText(parts[1]);
+                        if (parts.length > 2) middleName.setText(parts[2]);
+                        if (parts.length > 3) nameExt.setText(String.join(" ", java.util.Arrays.copyOfRange(parts, 3, parts.length)));
+                    }
                     course.setText(rs.getString("course")==null?"":rs.getString("course"));
                     String y = rs.getString("year");
                     if (y != null) year.setSelectedItem(y);
@@ -111,10 +129,21 @@ public class StudentInformationForm extends JFrame {
             } catch (java.sql.SQLException ex) { ex.printStackTrace(); }
         }
 
-        save.addActionListener(e -> {
+save.addActionListener(e -> {
             String full = (lastName.getText()+" "+firstName.getText()+" "+middleName.getText()+" "+nameExt.getText()).trim();
-            try (java.sql.Connection c = DB.getConnection();
-                 java.sql.PreparedStatement ps = c.prepareStatement(
+            try (java.sql.Connection c = DB.getConnection()) {
+                // insert user if password provided and not exists
+                if (password != null && !password.isEmpty()) {
+                    try (java.sql.PreparedStatement pu = c.prepareStatement("INSERT INTO users(id,password,role,name,email) VALUES(?,?,?,?,?)")) {
+                        pu.setString(1, id.getText().trim());
+                        pu.setString(2, password);
+                        pu.setString(3, "student");
+                        pu.setString(4, full);
+                        pu.setString(5, emailField.getText().trim());
+                        pu.executeUpdate();
+                    } catch (java.sql.SQLException ex) { /* may already exist */ }
+                }
+                try (java.sql.PreparedStatement ps = c.prepareStatement(
                      "INSERT INTO students(student_id,name,course,year,email,contact) VALUES(?,?,?,?,?,?) " +
                      "ON CONFLICT(student_id) DO UPDATE SET name=excluded.name,course=excluded.course,year=excluded.year,email=excluded.email,contact=excluded.contact")) {
                 ps.setString(1, id.getText().trim());
@@ -124,6 +153,7 @@ public class StudentInformationForm extends JFrame {
                 ps.setString(5, emailField.getText().trim());
                 ps.setString(6, contact.getText().trim());
                 ps.executeUpdate();
+                }
                 // update table
                 model.setRowCount(0);
                 model.addRow(new Object[]{"Student ID", id.getText().trim()});

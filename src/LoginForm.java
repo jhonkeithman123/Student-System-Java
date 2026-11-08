@@ -553,31 +553,12 @@ class SignupPanel extends JPanel {
                 return;
             }
             String full = (lastName.getText()+" "+firstName.getText()+" "+middleName.getText()+" "+nameExt.getText()).trim();
-            // persist to DB
-            try (java.sql.Connection c = DB.getConnection()) {
-                java.sql.PreparedStatement pu = c.prepareStatement("INSERT INTO users(id,password,role,name,email) VALUES(?,?,?,?,?)");
-                pu.setString(1, id);
-                pu.setString(2, pw);
-                pu.setString(3, "student");
-                pu.setString(4, full);
-                pu.setString(5, email.getText().trim());
-                pu.executeUpdate();
-                java.sql.PreparedStatement ps = c.prepareStatement("INSERT INTO students(student_id,name,course,year,email,contact) VALUES(?,?,?,?,?,?)");
-                ps.setString(1, id);
-                ps.setString(2, full);
-                ps.setString(3, "");
-                ps.setString(4, "1");
-                ps.setString(5, email.getText().trim());
-                ps.setString(6, "");
-                ps.executeUpdate();
-            } catch (java.sql.SQLException ex) {
-                ex.printStackTrace();
-            }
+            // do not insert into DB during signup; pass data to StudentInformationForm
             Window w = SwingUtilities.getWindowAncestor(this);
             if (w != null) {
                 w.dispose();
             }
-            new StudentInformationForm(true, full, email.getText().trim()).setVisible(true);
+            new StudentInformationForm(true, id, full, email.getText().trim(), "", pw).setVisible(true);
         });
         add(btn);
     }
